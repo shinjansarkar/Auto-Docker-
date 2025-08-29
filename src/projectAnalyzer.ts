@@ -8,6 +8,8 @@ export interface ProjectInfo {
     backendType?: 'nodejs' | 'python' | 'java' | 'go' | 'php' | 'dotnet' | 'rust';
     frontendPort: number;
     backendPort: number;
+    hasDatabase: boolean;
+    databaseType?: 'postgresql' | 'mysql' | 'mongodb' | 'redis' | 'sqlite';
     packageJson?: any;
     requirementsTxt?: string[];
     pomXml?: any;
@@ -29,7 +31,8 @@ export class ProjectAnalyzer {
             hasFrontend: false,
             hasBackend: false,
             frontendPort: 3000,
-            backendPort: 3000
+            backendPort: 3000,
+            hasDatabase: false
         };
 
         // Check for frontend frameworks
@@ -64,6 +67,13 @@ export class ProjectAnalyzer {
             } else if (backendInfo.type === 'rust') {
                 projectInfo.cargoToml = backendInfo.cargoToml;
             }
+        }
+
+        // Check for database dependencies
+        const databaseInfo = await this.detectDatabase();
+        if (databaseInfo) {
+            projectInfo.hasDatabase = true;
+            projectInfo.databaseType = databaseInfo.type;
         }
 
         return projectInfo;
@@ -294,6 +304,148 @@ export class ProjectAnalyzer {
 
     private async readFile(filePath: string): Promise<string> {
         return await fs.promises.readFile(filePath, 'utf-8');
+    }
+
+    private async detectDatabase(): Promise<{ type: 'postgresql' | 'mysql' | 'mongodb' | 'redis' | 'sqlite' } | null> {
+        // Check for database dependencies in package.json
+        const packageJsonPath = path.join(this.workspacePath, 'package.json');
+        if (await this.fileExists(packageJsonPath)) {
+            try {
+                const packageJson = JSON.parse(await this.readFile(packageJsonPath));
+                const dependencies = { ...packageJson.dependencies, ...packageJson.devDependencies };
+
+                // Check for database drivers
+                if (dependencies.pg || dependencies['pg-native'] || dependencies['postgres']) {
+                    return { type: 'postgresql' };
+                } else if (dependencies.mysql || dependencies['mysql2']) {
+                    return { type: 'mysql' };
+                } else if (dependencies.mongodb || dependencies.mongoose) {
+                    return { type: 'mongodb' };
+                } else if (dependencies.redis || dependencies['ioredis']) {
+                    return { type: 'redis' };
+                } else if (dependencies.sqlite3 || dependencies['better-sqlite3']) {
+                    return { type: 'sqlite' };
+                }
+            } catch (error) {
+                console.error('Error parsing package.json for database detection:', error);
+            }
+        }
+
+        // Check for database dependencies in requirements.txt
+        const requirementsPath = path.join(this.workspacePath, 'requirements.txt');
+        if (await this.fileExists(requirementsPath)) {
+            try {
+                const requirementsContent = await this.readFile(requirementsPath);
+                const requirements = requirementsContent.split('\n')
+                    .map(line => line.trim())
+                    .filter(line => line && !line.startsWith('#'));
+
+                if (requirements.some(req => req.includes('psycopg2') || req.includes('postgresql'))) {
+                    return { type: 'postgresql' };
+                } else if (requirements.some(req => req.includes('mysql') || req.includes('pymysql'))) {
+                    return { type: 'mysql' };
+                } else if (requirements.some(req => req.includes('pymongo') || req.includes('mongoengine'))) {
+                    return { type: 'mongodb' };
+                } else if (requirements.some(req => req.includes('redis') || req.includes('redis-py'))) {
+                    return { type: 'redis' };
+                } else if (requirements.some(req => req.includes('sqlite') || req.includes('sqlite3'))) {
+                    return { type: 'sqlite' };
+                }
+            } catch (error) {
+                console.error('Error reading requirements.txt for database detection:', error);
+            }
+        }
+
+        // Check for database dependencies in pom.xml
+        const pomXmlPath = path.join(this.workspacePath, 'pom.xml');
+        if (await this.fileExists(pomXmlPath)) {
+            try {
+                const pomXmlContent = await this.readFile(pomXmlPath);
+                
+                if (pomXmlContent.includes('postgresql') || pomXmlContent.includes('postgres')) {
+                    return { type: 'postgresql' };
+                } else if (pomXmlContent.includes('mysql')) {
+                    return { type: 'mysql' };
+                } else if (pomXmlContent.includes('mongodb')) {
+                    return { type: 'mongodb' };
+                } else if (pomXmlContent.includes('redis')) {
+                    return { type: 'redis' };
+                } else if (pomXmlContent.includes('sqlite')) {
+                    return { type: 'sqlite' };
+                }
+            } catch (error) {
+                console.error('Error reading pom.xml for database detection:', error);
+            }
+        }
+
+        // Check for database dependencies in go.mod
+        const goModPath = path.join(this.workspacePath, 'go.mod');
+        if (await this.fileExists(goModPath)) {
+            try {
+                const goModContent = await this.readFile(goModPath);
+                
+                if (goModContent.includes('lib/pq') || goModContent.includes('postgres')) {
+                    return { type: 'postgresql' };
+                } else if (goModContent.includes('mysql')) {
+                    return { type: 'mysql' };
+                } else if (goModContent.includes('mongo')) {
+                    return { type: 'mongodb' };
+                } else if (goModContent.includes('redis')) {
+                    return { type: 'redis' };
+                } else if (goModContent.includes('sqlite')) {
+                    return { type: 'sqlite' };
+                }
+            } catch (error) {
+                console.error('Error reading go.mod for database detection:', error);
+            }
+        }
+
+        // Check for database dependencies in composer.json
+        const composerJsonPath = path.join(this.workspacePath, 'composer.json');
+        if (await this.fileExists(composerJsonPath)) {
+            try {
+                const composerJson = JSON.parse(await this.readFile(composerJsonPath));
+                const require = { ...composerJson.require, ...composerJson['require-dev'] };
+
+                if (require['doctrine/dbal'] || require['postgresql']) {
+                    return { type: 'postgresql' };
+                } else if (require['mysql'] || require['mysqli']) {
+                    return { type: 'mysql' };
+                } else if (require['mongodb']) {
+                    return { type: 'mongodb' };
+                } else if (require['redis']) {
+                    return { type: 'redis' };
+                } else if (require['sqlite']) {
+                    return { type: 'sqlite' };
+                }
+            } catch (error) {
+                console.error('Error parsing composer.json for database detection:', error);
+            }
+        }
+
+        // Check for database dependencies in Cargo.toml
+        const cargoTomlPath = path.join(this.workspacePath, 'Cargo.toml');
+        if (await this.fileExists(cargoTomlPath)) {
+            try {
+                const cargoTomlContent = await this.readFile(cargoTomlPath);
+                
+                if (cargoTomlContent.includes('postgres') || cargoTomlContent.includes('tokio-postgres')) {
+                    return { type: 'postgresql' };
+                } else if (cargoTomlContent.includes('mysql')) {
+                    return { type: 'mysql' };
+                } else if (cargoTomlContent.includes('mongodb')) {
+                    return { type: 'mongodb' };
+                } else if (cargoTomlContent.includes('redis')) {
+                    return { type: 'redis' };
+                } else if (cargoTomlContent.includes('rusqlite')) {
+                    return { type: 'sqlite' };
+                }
+            } catch (error) {
+                console.error('Error reading Cargo.toml for database detection:', error);
+            }
+        }
+
+        return null;
     }
 
     private async findFiles(pattern: string): Promise<string[]> {

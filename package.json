@@ -3,6 +3,8 @@
   "displayName": "Auto Docker",
   "description": "Automatically generates Docker configurations based on project analysis",
   "version": "0.0.1",
+  "publisher": "shinjansarkar",
+  "icon": "images/icon.png",
   "engines": {
     "vscode": "^1.74.0"
   },
@@ -25,7 +27,9 @@
     "watch": "tsc -watch -p ./",
     "pretest": "npm run compile && npm run lint",
     "lint": "eslint src --ext ts",
-    "test": "node ./out/test/runTest.js"
+    "test": "node ./out/test/runTest.js",
+    "download-icon": "node scripts/download-icon.js",
+    "setup-icon": "node scripts/setup-icon.js"
   },
   "devDependencies": {
     "@types/vscode": "^1.74.0",

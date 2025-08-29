@@ -364,9 +364,13 @@ CMD ["./app"]`;
     }
 
     private async generateDockerCompose(): Promise<void> {
-        const composeContent = `version: '3.8'
+        let composeContent = `version: '3.8'
 
-services:
+services:`;
+
+        // Add frontend service if exists
+        if (this.projectInfo.hasFrontend) {
+            composeContent += `
   frontend:
     build:
       context: .
@@ -374,26 +378,160 @@ services:
     ports:
       - "80:80"
     depends_on:
-      - backend
+      - backend${this.projectInfo.hasDatabase ? '\n      - database' : ''}
     networks:
-      - app-network
+      - app-network`;
+        }
 
+        // Add backend service
+        composeContent += `
   backend:
     build:
       context: .
-      dockerfile: Dockerfile.backend
+      dockerfile: ${this.projectInfo.hasFrontend ? 'Dockerfile.backend' : 'Dockerfile'}
     ports:
       - "${this.projectInfo.backendPort}:${this.projectInfo.backendPort}"
     environment:
-      - NODE_ENV=production
+      - NODE_ENV=production`;
+
+        // Add database environment variables
+        if (this.projectInfo.hasDatabase) {
+            composeContent += this.generateDatabaseEnvironment();
+        }
+
+        composeContent += `
+    depends_on:${this.projectInfo.hasDatabase ? '\n      - database' : ''}
     networks:
-      - app-network
+      - app-network`;
+
+        // Add database service if detected
+        if (this.projectInfo.hasDatabase) {
+            composeContent += this.generateDatabaseService();
+        }
+
+        composeContent += `
 
 networks:
   app-network:
     driver: bridge`;
 
+        // Add volumes if database exists
+        if (this.projectInfo.hasDatabase) {
+            composeContent += `
+
+volumes:
+  database_data:`;
+
+            if (this.projectInfo.databaseType === 'postgresql') {
+                composeContent += `
+  postgres_data:`;
+            } else if (this.projectInfo.databaseType === 'mysql') {
+                composeContent += `
+  mysql_data:`;
+            } else if (this.projectInfo.databaseType === 'mongodb') {
+                composeContent += `
+  mongo_data:`;
+            } else if (this.projectInfo.databaseType === 'redis') {
+                composeContent += `
+  redis_data:`;
+            }
+        }
+
         await this.writeFile('docker-compose.yml', composeContent);
+    }
+
+    private generateDatabaseEnvironment(): string {
+        switch (this.projectInfo.databaseType) {
+            case 'postgresql':
+                return `
+      - DATABASE_URL=postgresql://postgres:password@database:5432/myapp
+      - POSTGRES_DB=myapp
+      - POSTGRES_USER=postgres
+      - POSTGRES_PASSWORD=password`;
+            case 'mysql':
+                return `
+      - DATABASE_URL=mysql://root:password@database:3306/myapp
+      - MYSQL_DATABASE=myapp
+      - MYSQL_ROOT_PASSWORD=password`;
+            case 'mongodb':
+                return `
+      - MONGODB_URI=mongodb://database:27017/myapp
+      - MONGO_DB_NAME=myapp`;
+            case 'redis':
+                return `
+      - REDIS_URL=redis://database:6379
+      - REDIS_HOST=database
+      - REDIS_PORT=6379`;
+            case 'sqlite':
+                return `
+      - DATABASE_URL=sqlite:///app.db`;
+            default:
+                return '';
+        }
+    }
+
+    private generateDatabaseService(): string {
+        switch (this.projectInfo.databaseType) {
+            case 'postgresql':
+                return `
+
+  database:
+    image: postgres:15-alpine
+    environment:
+      - POSTGRES_DB=myapp
+      - POSTGRES_USER=postgres
+      - POSTGRES_PASSWORD=password
+    ports:
+      - "5432:5432"
+    volumes:
+      - postgres_data:/var/lib/postgresql/data
+    networks:
+      - app-network`;
+            case 'mysql':
+                return `
+
+  database:
+    image: mysql:8.0
+    environment:
+      - MYSQL_DATABASE=myapp
+      - MYSQL_ROOT_PASSWORD=password
+    ports:
+      - "3306:3306"
+    volumes:
+      - mysql_data:/var/lib/mysql
+    networks:
+      - app-network`;
+            case 'mongodb':
+                return `
+
+  database:
+    image: mongo:6.0
+    environment:
+      - MONGO_INITDB_DATABASE=myapp
+    ports:
+      - "27017:27017"
+    volumes:
+      - mongo_data:/data/db
+    networks:
+      - app-network`;
+            case 'redis':
+                return `
+
+  database:
+    image: redis:7-alpine
+    ports:
+      - "6379:6379"
+    volumes:
+      - redis_data:/data
+    networks:
+      - app-network`;
+            case 'sqlite':
+                return `
+
+  # SQLite uses file-based storage, no separate database service needed`;
+            default:
+                return '';
+        }
     }
 
     private async writeFile(filename: string, content: string): Promise<void> {
